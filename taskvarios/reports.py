@@ -576,25 +576,24 @@ def recurrent_report():
             return "[red]", "[/red]"
 
     def get_all_deleted_tasks():
-        # Run the 'task export' command and get the output
-        result = subprocess.run(["task", "export"], stdout=subprocess.PIPE)
-
-        # Load the output into Python as JSON
+        result = subprocess.run(
+            ["task", "status:deleted", "export"], capture_output=True, text=True
+        )
         all_tasks = json.loads(result.stdout)
 
-        # Prepare a list to store tasks
         deleted_tasks = []
-
-        # Iterate over all tasks
         for task in all_tasks:
-            # Check if task status is 'deleted'
-            if task["status"] == "deleted" and "due" in task:
-                task["due"] = datetime.strptime(
-                    task["due"], "%Y%m%dT%H%M%SZ"
-                ).date()  # convert to datetime.date object
-                deleted_tasks.append(task)
+            due_value = task.get("due")
+            if not due_value:
+                continue
+            try:
+                due_date = datetime.strptime(due_value, "%Y%m%dT%H%M%SZ").date()
+            except ValueError:
+                continue
+            task_copy = dict(task)
+            task_copy["due_date"] = due_date
+            deleted_tasks.append(task_copy)
 
-        # Return the list of tasks
         return deleted_tasks
 
     if pd is None:
@@ -609,15 +608,38 @@ def recurrent_report():
     completed_tasks = all_tasks["completed"]
     pending_tasks = all_tasks["pending"]
 
+    now_date = datetime.now().date()
+    parsed_local_dates = {}
+
+    def parse_local_date(date_str):
+        if date_str not in parsed_local_dates:
+            parsed_local_dates[date_str] = parse_date(date_str).date()
+        return parsed_local_dates[date_str]
+
     tasks_today = [
         task
         for task in pending_tasks + completed_tasks
         if "recur" in task
         and "due" in task
-        and parse_date(task["due"]).date() == datetime.now().date()
+        and parse_local_date(task["due"]) == now_date
     ]
 
     deleted_tasks = get_all_deleted_tasks()
+    completed_by_desc_date = {
+        (task.get("description", ""), parse_local_date(task["end"]))
+        for task in completed_tasks
+        if task.get("end")
+    }
+    pending_by_desc_date = {
+        (task.get("description", ""), parse_local_date(task["due"]))
+        for task in pending_tasks
+        if task.get("due")
+    }
+    deleted_by_desc_date = {
+        (task.get("description", ""), task["due_date"])
+        for task in deleted_tasks
+        if task.get("due_date")
+    }
 
     weekly_report = {}
     task_counter = 1  # Start task_counter from 1
@@ -632,27 +654,11 @@ def recurrent_report():
         weekly_report[task_counter] = {}
 
         for i in range(8):
-            date = datetime.now().date() - timedelta(days=i)
+            date = now_date - timedelta(days=i)
 
-            completed = any(
-                task
-                for task in completed_tasks
-                if task.get("end")
-                and parse_date(task["end"]).date() == date
-                and task["description"] == task_description
-            )
-            pending = any(
-                task
-                for task in pending_tasks
-                if "due" in task
-                and parse_date(task["due"]).date() == date
-                and task["description"] == task_description
-            )
-            deleted = any(
-                task
-                for task in deleted_tasks
-                if task["description"] == task_description and task["due"] == date
-            )
+            completed = (task_description, date) in completed_by_desc_date
+            pending = (task_description, date) in pending_by_desc_date
+            deleted = (task_description, date) in deleted_by_desc_date
 
             due = pending
 

@@ -12,25 +12,26 @@ from taskw import TaskWarrior as Warrior
 warrior = Warrior()
 
 
-def get_creation_date(item_name):
-    tasks = warrior.load_tasks()
-    for task in tasks["pending"]:
+def get_creation_date(item_name, pending_tasks=None):
+    if pending_tasks is None:
+        pending_tasks = warrior.load_tasks()["pending"]
+    for task in pending_tasks:
         project = task.get("project")
         if project and (
             project == item_name or project.startswith("AoR." + item_name)
         ):
             created = task.get("entry")
             if created:
-                print(datetime.strptime(created, "%Y%m%dT%H%M%SZ"))
                 return datetime.strptime(created, "%Y%m%dT%H%M%SZ")
 
     return None
 
 
-def get_last_modified_date(item_name):
-    tasks = warrior.load_tasks()
+def get_last_modified_date(item_name, pending_tasks=None):
+    if pending_tasks is None:
+        pending_tasks = warrior.load_tasks()["pending"]
     last_modified = None
-    for task in tasks["pending"]:
+    for task in pending_tasks:
         project = task.get("project")
         if project and (
             project == item_name or project.startswith("AoR." + item_name)
@@ -46,8 +47,9 @@ def get_last_modified_date(item_name):
 
 def view_project_metadata(item, tags, item_name):
     console = Console()
+    pending_tasks = warrior.load_tasks()["pending"]
     # Display creation date
-    creation_date = get_creation_date(item["name"])
+    creation_date = get_creation_date(item["name"], pending_tasks)
     if creation_date:
         current_datetime = datetime.now()
         creation_time_difference = current_datetime - creation_date
@@ -67,7 +69,7 @@ def view_project_metadata(item, tags, item_name):
         )
 
     # Display last modified date
-    last_modified_date = get_last_modified_date(item["name"])
+    last_modified_date = get_last_modified_date(item["name"], pending_tasks)
     if last_modified_date:
         current_datetime = datetime.now()
         last_modified_time_difference = current_datetime - last_modified_date

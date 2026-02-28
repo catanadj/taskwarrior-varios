@@ -79,7 +79,10 @@ from taskvarios.storage import get_default_db_path, load_sultandb
 from taskvarios.metadata import update_metadata_field as run_update_metadata_field
 from taskvarios.task_manager import task_manager as run_task_manager
 from taskvarios.taskwarrior import run_taskwarrior_command
-from taskvarios.task_views import display_overdue_tasks as run_display_overdue_tasks
+from taskvarios.task_views import (
+    display_due_tasks as run_display_due_tasks,
+    display_overdue_tasks as run_display_overdue_tasks,
+)
 
 try:
     import ujson as json
@@ -359,8 +362,9 @@ try:
             print(f"Selected tasks for {date}")
 
         w = Warrior()
-        pending_tasks = w.load_tasks()["pending"]
-        completed_tasks = w.load_tasks()["completed"]
+        task_snapshot = w.load_tasks()
+        pending_tasks = task_snapshot["pending"]
+        completed_tasks = task_snapshot["completed"]
         deleted_tasks = get_deleted_tasks_due_today(date)
 
         due_tasks = sorted(
@@ -589,146 +593,7 @@ try:
                 subprocess.run(f"task {task_command}", shell=True)
 
     def display_due_tasks():
-        tasks = warrior.load_tasks()
-
-        include_recurrent = questionary.confirm(
-            "Include recurrent tasks in the search?", default=False
-        ).ask()
-        if include_recurrent:
-            tasks = tasks["pending"]
-        else:
-            tasks = [task for task in tasks["pending"] if "recur" not in task]
-
-        # Determine local timezone
-        # local_tz = datetime.now().astimezone().tzinfo
-
-        # Define time frames
-        now = datetime.now(local_tz)
-        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_overdue = start_of_day - timedelta(days=365)
-        end_of_today = start_of_day + timedelta(days=1)
-        end_of_tomorrow = end_of_today + timedelta(days=1)
-        # This should point to next Monday
-        start_of_next_week = start_of_day + timedelta(
-            days=(7 - start_of_day.weekday()) % 7
-        )
-        end_of_next_week = start_of_next_week + timedelta(
-            days=6
-        )  # This should point to next Sunday
-        # This should point to day after tomorrow
-        start_of_rest_of_the_week = end_of_tomorrow
-        # This should point to the end of this week (Sunday)
-        end_of_rest_of_the_week = start_of_next_week - timedelta(seconds=1)
-        start_of_next_2_weeks = start_of_next_week
-        end_of_next_2_weeks = start_of_next_2_weeks + timedelta(
-            days=15
-        )  # Updated to include 2 weeks + 1 day
-        start_of_next_3_weeks = start_of_next_week
-        end_of_next_3_weeks = start_of_next_3_weeks + timedelta(days=21)
-        end_of_next_3_months = start_of_day + timedelta(days=90)
-        end_of_next_6_months = start_of_day + timedelta(days=180)
-        end_of_next_year = start_of_day + timedelta(days=365)
-        end_of_next_3_years = start_of_day + timedelta(days=365 * 3)
-        end_of_next_5_years = start_of_day + timedelta(days=365 * 5)
-        end_of_next_10_years = start_of_day + timedelta(days=365 * 10)
-        end_of_next_20_years = start_of_day + timedelta(days=365 * 20)
-
-        time_frames = [
-            ("Next 20 Years", end_of_next_10_years, end_of_next_20_years),
-            ("Next 10 Years", end_of_next_5_years, end_of_next_10_years),
-            ("Next 5 Years", end_of_next_3_years, end_of_next_5_years),
-            ("Next 3 Years", end_of_next_year, end_of_next_3_years),
-            ("Next Year", end_of_next_6_months, end_of_next_year),
-            ("Next 6 Months", end_of_next_3_months, end_of_next_6_months),
-            ("Next 3 Months", end_of_next_3_weeks, end_of_next_3_months),
-            # Change the start time to end_of_next_week
-            ("Next 3 Weeks", end_of_next_week, end_of_next_3_weeks),
-            # Change the start time to end_of_next_week
-            ("Next 2 Weeks", end_of_next_week, end_of_next_2_weeks),
-            ("Next Week", start_of_next_week, end_of_next_week),
-            ("Rest of the Week", start_of_rest_of_the_week, end_of_rest_of_the_week),
-            ("Tomorrow", end_of_today, end_of_tomorrow),
-            ("Today", start_of_day, end_of_today),
-            ("Overdue", start_of_overdue, start_of_day),
-        ]
-
-        # Categorize tasks
-        categorized_tasks = {name: [] for name, _, _ in time_frames}
-        for task in tasks:
-            due_date_str = task.get("due")
-            if due_date_str:
-                due_date = datetime.strptime(due_date_str, "%Y%m%dT%H%M%SZ").replace(
-                    tzinfo=pytz.UTC
-                )
-                due_date = due_date.astimezone(local_tz)  # Convert to local time
-                for name, start, end in time_frames:
-                    if start is None or (start <= due_date < end):
-                        if name == "Today":
-                            delta = ""
-                        else:
-                            delta = due_date - now
-                            days, seconds = delta.days, delta.seconds
-                            hours = seconds // 3600
-                            minutes = (seconds % 3600) // 60
-                            task["time_remaining"] = (
-                                f"{days} days, {hours}:{minutes:02d}"  # Calculate time remaining
-                            )
-                            categorized_tasks[name].append(task)
-                        break
-
-        # Display tasks
-        for name, tasks in list(categorized_tasks.items()):
-            if tasks:
-                print(colored(name, "yellow", attrs=["bold"]))
-                for task in tasks:
-                    task_id = colored(f"[{task['id']}]", "yellow")
-                    description = colored(task["description"], "white")
-                    tag = colored(
-                        ",".join(task.get("tags", [])), "red", attrs=["bold"]
-                    )  # Join tags with comma
-                    project = colored(task.get("project", ""), "blue", attrs=["bold"])
-                    time_remaining = colored(
-                        task.get("time_remaining", ""), "green", attrs=["bold"]
-                    )  # Display time remaining
-
-                    print(f"{task_id} {description} {tag} {project} {time_remaining}")
-
-                    if "annotations" in task:  # Ensure annotations are in the task
-                        for annotation in task["annotations"]:
-                            entry_date = datetime.strptime(
-                                annotation["entry"], "%Y%m%dT%H%M%SZ"
-                            ).date()
-                            print(
-                                f"\t{Fore.CYAN}{entry_date}{Fore.YELLOW}: {annotation['description']}"
-                            )
-                print("=" * 60)
-
-        # # Display tasks # each category in its own table
-        # for name, tasks in list(categorized_tasks.items()):
-        # 	if tasks:
-        # 		table = Table(title=Text(name, style="yellow bold"), expand=True)
-        # 		table.add_column("ID", style="yellow", no_wrap=True)
-        # 		table.add_column("Description", style="cyan")
-        # 		table.add_column("Tags", style="red")
-        # 		table.add_column("Project", style="blue")
-        # 		table.add_column("Time Remaining", style="green")
-
-        # 		for task in tasks:
-        # 			task_id = f"[{task['id']}]"
-        # 			description = task['description']
-        # 			tags = ','.join(task.get('tags', []))
-        # 			project = task.get('project', '')
-        # 			time_remaining = task.get('time_remaining', '')
-
-        # 			table.add_row(task_id, description, tags, project, time_remaining)
-
-        # 			if 'annotations' in task:
-        # 				for annotation in task['annotations']:
-        # 					entry_date = datetime.strptime(annotation['entry'], '%Y%m%dT%H%M%SZ').date()
-        # 					table.add_row("", Text(f"{entry_date}: {annotation['description']}", style="dim italic"), "", "", "")
-
-        # 		console.print(Panel(table, expand=False))
-        # 		console.print()
+        return run_display_due_tasks(warrior, local_tz)
 
     def get_item_info(user_input):
         print(user_input + "this needs work")
@@ -742,12 +607,12 @@ try:
             if item["name"] == item_name:
                 item["status"] = "Completed"
 
-    def get_creation_date(item_name):
-        return run_get_creation_date(item_name)
+    def get_creation_date(item_name, pending_tasks=None):
+        return run_get_creation_date(item_name, pending_tasks)
 
 
-    def get_last_modified_date(item_name):
-        return run_get_last_modified_date(item_name)
+    def get_last_modified_date(item_name, pending_tasks=None):
+        return run_get_last_modified_date(item_name, pending_tasks)
 
 
     def get_tags_for_item(item_name):

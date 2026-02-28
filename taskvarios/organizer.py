@@ -886,40 +886,60 @@ def task_organizer(
         def get_pending_counts(self, attribute):
             counts = defaultdict(int)
 
-            def run_command(command):
-                result = subprocess.run(
-                    command, shell=True, capture_output=True, text=True
-                )
-                try:
-                    return int(result.stdout.strip())
-                except ValueError:
-                    print(
-                        f"Failed to parse count for command '{command}': {result.stdout.strip()}"
-                    )
-                    return 0
-
             if attribute == "tags":
                 unique_tags = set(
                     tag for task in self.tasks for tag in task.get("tags", [])
                 )
-                for tag in unique_tags:
-                    command = f"task +{tag} +PENDING count"
-                    counts[tag] = run_command(command)
+                if not unique_tags:
+                    return counts
+                result = subprocess.run(
+                    ["task", "status:pending", "export"],
+                    capture_output=True,
+                    text=True,
+                )
+                pending_tasks = json.loads(result.stdout or "[]")
+                for task in pending_tasks:
+                    for tag in task.get("tags", []):
+                        if tag in unique_tags:
+                            counts[tag] += 1
             elif attribute == "projects":
                 unique_projects = set(
                     task.get("project")
                     for task in self.tasks
                     if task.get("project")
                 )
-                for project in unique_projects:
-                    command = f"task project:{project} +PENDING count"
-                    counts[project] = run_command(command)
+                if not unique_projects:
+                    return counts
+                result = subprocess.run(
+                    ["task", "status:pending", "export"],
+                    capture_output=True,
+                    text=True,
+                )
+                pending_tasks = json.loads(result.stdout or "[]")
+                for task in pending_tasks:
+                    project_name = task.get("project")
+                    if project_name in unique_projects:
+                        counts[project_name] += 1
             elif attribute == "pending":
-                command = f"task due:{self.current_date} status:pending count"
-                counts = run_command(command)
+                result = subprocess.run(
+                    ["task", f"due:{self.current_date}", "status:pending", "count"],
+                    capture_output=True,
+                    text=True,
+                )
+                try:
+                    counts = int(result.stdout.strip())
+                except ValueError:
+                    counts = 0
             elif attribute == "completed":
-                command = f"task due:{self.current_date} status:completed count"
-                counts = run_command(command)
+                result = subprocess.run(
+                    ["task", f"due:{self.current_date}", "status:completed", "count"],
+                    capture_output=True,
+                    text=True,
+                )
+                try:
+                    counts = int(result.stdout.strip())
+                except ValueError:
+                    counts = 0
 
             return counts
 

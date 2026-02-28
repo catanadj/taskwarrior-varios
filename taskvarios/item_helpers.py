@@ -16,10 +16,11 @@ from taskvarios.storage import save_sultandb
 warrior = Warrior()
 
 
-def get_tags_for_item(item_name):
-    tasks = warrior.load_tasks()
+def get_tags_for_item(item_name, pending_tasks=None):
+    if pending_tasks is None:
+        pending_tasks = warrior.load_tasks()["pending"]
     tags = {}
-    for task in tasks["pending"]:
+    for task in pending_tasks:
         project = task.get("project")
         if project and (
             project == item_name or project.startswith("AoR." + item_name)
@@ -57,7 +58,23 @@ def view_data(item, tags, get_creation_date_fn, get_last_modified_date_fn):
         if field_name == "Outcome":
             print("Defining what 'DONE' means.")
 
-    creation_date = get_creation_date_fn(item["name"])
+    all_pending_tasks = warrior.load_tasks()["pending"]
+    item_name = item["name"]
+    item_aor_prefix = "AoR." + item_name
+    relevant_tasks = [
+        task
+        for task in all_pending_tasks
+        if task.get("project")
+        and (
+            task.get("project") == item_name
+            or task.get("project").startswith(item_aor_prefix)
+        )
+    ]
+
+    try:
+        creation_date = get_creation_date_fn(item_name, relevant_tasks)
+    except TypeError:
+        creation_date = get_creation_date_fn(item_name)
     if creation_date:
         current_datetime = datetime.now()
         creation_time_difference = current_datetime - creation_date
@@ -76,7 +93,10 @@ def view_data(item, tags, get_creation_date_fn, get_last_modified_date_fn):
             f"{creation_time_difference_formatted}{Fore.RESET}"
         )
 
-    last_modified_date = get_last_modified_date_fn(item["name"])
+    try:
+        last_modified_date = get_last_modified_date_fn(item_name, relevant_tasks)
+    except TypeError:
+        last_modified_date = get_last_modified_date_fn(item_name)
     if last_modified_date:
         current_datetime = datetime.now()
         last_modified_time_difference = current_datetime - last_modified_date
@@ -99,7 +119,17 @@ def view_data(item, tags, get_creation_date_fn, get_last_modified_date_fn):
         print(f"{Fore.BLUE}Outcome: {Fore.YELLOW}{item['outcome']}{Fore.RESET}")
 
     print(f"{Fore.BLUE}Tags:{Fore.RESET}")
+    tasks_by_tag = {}
     no_tag_tasks = []
+    for task in relevant_tasks:
+        task_tags = task.get("tags", [])
+        if not task_tags:
+            no_tag_tasks.append(task)
+            continue
+        for tag in task_tags:
+            tasks_by_tag.setdefault(tag, []).append(task)
+
+    now = datetime.now()
     for tag, count in tags.items():
         if tag != "Completed":
             print(
@@ -107,31 +137,20 @@ def view_data(item, tags, get_creation_date_fn, get_last_modified_date_fn):
                 f"({count} task{'s' if count > 1 else ''})"
             )
 
-            tasks = warrior.load_tasks()["pending"]
-            for task in tasks:
-                task_tags = task.get("tags", [])
-                task_project = task.get("project", "")
-                if tag in task_tags and (
-                    task_project == item["name"]
-                    or task_project.startswith("AoR." + item["name"])
-                ):
-                    task_id = task["id"]
-                    task_description = task.get("description", "")
-                    time_remaining = ""
-                    if "due" in task:
+            for task in tasks_by_tag.get(tag, []):
+                task_id = task["id"]
+                task_description = task.get("description", "")
+                time_remaining = ""
+                if "due" in task:
+                    try:
                         due_date = datetime.strptime(task["due"], "%Y%m%dT%H%M%SZ")
-                        time_remaining = due_date - datetime.now()
-                        time_remaining = str(time_remaining).split(".")[0]
-                    print(
-                        f"\t{Fore.YELLOW}{task_id}{Fore.RESET}, "
-                        f"{Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}"
-                    )
-                elif not task_tags and (
-                    task_project == item["name"]
-                    or task_project.startswith("AoR." + item["name"])
-                ):
-                    if task not in no_tag_tasks:
-                        no_tag_tasks.append(task)
+                        time_remaining = str(due_date - now).split(".")[0]
+                    except ValueError:
+                        time_remaining = ""
+                print(
+                    f"\t{Fore.YELLOW}{task_id}{Fore.RESET}, "
+                    f"{Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}"
+                )
 
     if no_tag_tasks:
         print(
@@ -143,9 +162,11 @@ def view_data(item, tags, get_creation_date_fn, get_last_modified_date_fn):
             task_description = task.get("description", "")
             time_remaining = ""
             if "due" in task:
-                due_date = datetime.strptime(task["due"], "%Y%m%dT%H%M%SZ")
-                time_remaining = due_date - datetime.now()
-                time_remaining = str(time_remaining).split(".")[0]
+                try:
+                    due_date = datetime.strptime(task["due"], "%Y%m%dT%H%M%SZ")
+                    time_remaining = str(due_date - now).split(".")[0]
+                except ValueError:
+                    time_remaining = ""
             print(
                 f"\t{Fore.RED}{task_id}{Fore.RESET}, "
                 f"{Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}"
