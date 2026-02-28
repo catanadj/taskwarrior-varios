@@ -1,7 +1,5 @@
 ------------
-# TaskSultan
-
-![TaskSultan](https://github.com/catanadj/tasksultan/assets/92119322/b69ecc84-8685-41e9-9374-167758032816)
+# TaskVarios
 
 
 ## An Enhanced Utility Suite for TaskWarrior
@@ -17,7 +15,7 @@ Projects: Each project can be enriched with metadata such as worklogs, annotatio
 AoRs: Unlike projects which culminate in outcomes, AoRs maintain standards. While a project like "Buy Car X" targets owning the car as its outcome, once achieved, the car transitions to an AoR where standards like maintenance, revision dates, and care are tracked.
 
 ### Technical Details:
-TaskSultan identifies AoRs and projects based on their nomenclature in TaskWarrior. AoRs are prefixed with 'AoR' (e.g., AoR.cars.carX). TaskSultan then differentiates and categorizes them, offering customized outcome/standard fields, visual distinctions via color-coding, and menu separation.
+TaskVarios identifies AoRs and projects based on their nomenclature in TaskWarrior. AoRs are prefixed with 'AoR' (e.g., AoR.cars.carX). TaskVarios then differentiates and categorizes them, offering customized outcome/standard fields, visual distinctions via color-coding, and menu separation.
 
 ### Getting Started:
     Clone the repository.
