@@ -1,11 +1,8 @@
 from tasklib import TaskWarrior, Task
 from taskw import TaskWarrior as Warrior
-import datetime
-import inquirer
-from colorama import init, Fore, Back, Style
+from colorama import init, Fore, Back
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
-from collections import Counter
 from termcolor import colored
 
 # from itertools import zip_longest
@@ -30,18 +27,15 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.text import Text
-from rich.console import Console
 from rich.tree import Tree
 
 # from rich import print as rprint
 from rich.panel import Panel
-from rich.text import Text
 from rich.console import Group
 from rich import box
 import re
 from enum import Enum
 from rich.prompt import IntPrompt
-from itertools import groupby
 
 from pathlib import Path
 from typing import List, Optional
@@ -50,7 +44,6 @@ import shlex
 
 import logging
 
-from datetime import datetime, timedelta
 import sys
 
 from taskvarios.constants import colors, guide_styles, level_colors, local_tz
@@ -82,10 +75,11 @@ from taskvarios.reports import (
     next_summary,
     recurrent_report,
 )
-from taskvarios.storage import get_default_db_path, load_sultandb, save_sultandb
+from taskvarios.storage import get_default_db_path, load_sultandb
 from taskvarios.metadata import update_metadata_field as run_update_metadata_field
 from taskvarios.task_manager import task_manager as run_task_manager
 from taskvarios.taskwarrior import run_taskwarrior_command
+from taskvarios.task_views import display_overdue_tasks as run_display_overdue_tasks
 
 try:
     import ujson as json
@@ -298,72 +292,7 @@ try:
             print("\nNo new AoRs or projects were added.\n")
 
     def display_overdue_tasks():
-        tasks = warrior.load_tasks()
-        print(colored("Overdue Tasks", "yellow", attrs=["bold"]))
-        include_recurrent = questionary.confirm(
-            "Include recurrent tasks in the search?", default=False
-        ).ask()
-        if include_recurrent:
-            tasks = tasks["pending"]
-        else:
-            tasks = [task for task in tasks["pending"] if "recur" not in task]
-
-        # Determine local timezone
-        # local_tz = datetime.now().astimezone().tzinfo
-
-        # Filter tasks for overdue tasks only
-        overdue_tasks = []
-        now = datetime.now(local_tz)
-        for task in tasks:
-            due_date_str = task.get("due")
-            if due_date_str:
-                due_date = datetime.strptime(due_date_str, "%Y%m%dT%H%M%SZ").replace(
-                    tzinfo=pytz.UTC
-                )
-                due_date = due_date.astimezone(local_tz)  # Convert to local time
-                if due_date < now:
-                    time_remaining = now - due_date
-                    task["time_remaining"] = (
-                        str(time_remaining.days) + " days"
-                    )  # Calculate time remaining in days
-                    overdue_tasks.append(task)
-
-        # Sort overdue tasks by due date (oldest to newest)
-        overdue_tasks.sort(key=lambda task: task["due"])
-
-        # Display overdue tasks
-        if overdue_tasks:
-            for task in overdue_tasks:
-                task_id = colored(f"{task['id']}", "yellow")
-                if task.get("value"):
-                    task_value = colored(f"{int(task['value'])}", "red", attrs=["bold"])
-                else:
-                    task_value = ""
-
-                description = colored(task["description"], "cyan")
-                tag = colored(
-                    ",".join(task.get("tags", [])), "red", attrs=["bold"]
-                )  # Join tags with comma
-                project = colored(task.get("project", ""), "blue", attrs=["bold"])
-                time_remaining = colored(
-                    task.get("time_remaining", ""), "green", attrs=["bold"]
-                )  # Display time remaining
-
-                print(
-                    f"{task_id} {description} {task_value} {tag} {project} -{time_remaining}"
-                )
-
-                if "annotations" in task:  # Ensure annotations are in the task
-                    for annotation in task["annotations"]:
-                        entry_date = datetime.strptime(
-                            annotation["entry"], "%Y%m%dT%H%M%SZ"
-                        ).date()
-                        print(
-                            f"\t{Fore.CYAN}{entry_date}{Fore.YELLOW}: {annotation['description']}"
-                        )
-            print("=" * 60)
-        else:
-            print("No overdue tasks found.")
+        return run_display_overdue_tasks(warrior, local_tz)
 
     def print_tasks_for_selected_day():
         # Initialize colorama
@@ -886,16 +815,6 @@ try:
     def view_project_metadata(item, tags, item_name):
         return run_view_project_metadata(item, tags, item_name)
 
-
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.application import get_app
-    from prompt_toolkit.filters import Condition
-    from prompt_toolkit.shortcuts import prompt
-    # from prompt_toolkit.shortcuts.prompt import CompleteStyle
-    from prompt_toolkit.formatted_text import HTML
-    from prompt_toolkit.styles import Style
-    import inquirer
 
     def get_multiline_input(prompt_message):
         return run_get_multiline_input(prompt_message)
