@@ -5,10 +5,10 @@
 ## An Enhanced Utility Suite for TaskWarrior
 
 ### Overview:
-TaskSultan has been crafted to enhance the management of 'Areas of Responsibility' (AoRs) and projects within TaskWarrior. It not only offers auxiliary reports but streamlines tasks associated with AoRs and projects.
+TaskVarios has been crafted to enhance the management of 'Areas of Responsibility' (AoRs) and projects within TaskWarrior. It not only offers auxiliary reports but streamlines tasks associated with AoRs and projects.
 
 ### Functionality:
-Upon execution, TaskSultan generates a JSON file in its directory detailing every AoR and Project within TaskWarrior.
+Upon execution, TaskVarios generates a JSON file in its directory detailing every AoR and Project within TaskWarrior.
 
 Projects: Each project can be enriched with metadata such as worklogs, annotations, descriptions, and outcomes.
 
