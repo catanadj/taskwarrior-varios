@@ -18,7 +18,7 @@ except ImportError:
 
 try:
     import pandas as pd
-except ImportError:
+except Exception:
     pd = None
 
 
@@ -46,6 +46,8 @@ def basic_summary():
         due_date = (
             parse(due_date_str) if due_date_str and due_date_str != "" else None
         )
+        time_remaining = due_date - now if due_date else None
+        time_remaining_str = str(time_remaining)[:-7] if time_remaining else ""
 
         if project:
             # Count tasks for each level of the project hierarchy
@@ -55,10 +57,6 @@ def basic_summary():
 
             if tags:
                 for tag in tags:
-                    time_remaining = due_date - now if due_date else None
-                    time_remaining_str = (
-                        str(time_remaining)[:-7] if time_remaining else ""
-                    )
                     project_data[project][tag].append(
                         [
                             f"{task_id} {description}",

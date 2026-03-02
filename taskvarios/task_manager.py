@@ -163,7 +163,7 @@ def task_manager(
         table.add_row("Enter", "Exit")
 
         console.print(Panel(table, title="Task Management Options", expand=False))
-        choice = console.input("[yellow]Enter your choice: ")
+        choice = console.input("[yellow]Enter your choice: ").strip().lower()
 
         if choice == "cm":
             context_menu_fn(current_task)

@@ -79,7 +79,10 @@ def display_due_tasks(warrior, local_tz):
     start_of_overdue = start_of_day - timedelta(days=365)
     end_of_today = start_of_day + timedelta(days=1)
     end_of_tomorrow = end_of_today + timedelta(days=1)
-    start_of_next_week = start_of_day + timedelta(days=(7 - start_of_day.weekday()) % 7)
+    days_until_next_week = (7 - start_of_day.weekday()) % 7
+    if days_until_next_week == 0:
+        days_until_next_week = 7
+    start_of_next_week = start_of_day + timedelta(days=days_until_next_week)
     end_of_next_week = start_of_next_week + timedelta(days=6)
     start_of_rest_of_the_week = end_of_tomorrow
     end_of_rest_of_the_week = start_of_next_week - timedelta(seconds=1)
@@ -123,14 +126,14 @@ def display_due_tasks(warrior, local_tz):
             for name, start, end in time_frames:
                 if start is None or (start <= due_date < end):
                     if name == "Today":
-                        delta = ""
+                        task["time_remaining"] = ""
                     else:
                         delta = due_date - now
                         days, seconds = delta.days, delta.seconds
                         hours = seconds // 3600
                         minutes = (seconds % 3600) // 60
                         task["time_remaining"] = f"{days} days, {hours}:{minutes:02d}"
-                        categorized_tasks[name].append(task)
+                    categorized_tasks[name].append(task)
                     break
 
     for name, tasks in list(categorized_tasks.items()):

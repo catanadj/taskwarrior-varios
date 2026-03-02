@@ -260,7 +260,7 @@ def interactive_prompt(
             ).ask()
             if search_command == "Search Data":
                 search_data_fn(aors, projects)
-            elif command == "Search Project":
+            elif search_command == "Search Project":
                 call_and_process_task_projects_fn()
             elif search_command == "Search Task":
                 search_task_fn()

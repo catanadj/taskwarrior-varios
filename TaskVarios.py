@@ -590,7 +590,7 @@ try:
             if task_command.lower() == "":
                 return
             else:
-                subprocess.run(f"task {task_command}", shell=True)
+                subprocess.run(["task", *shlex.split(task_command)])
 
     def display_due_tasks():
         return run_display_due_tasks(warrior, local_tz)
@@ -626,10 +626,10 @@ try:
     def execute_taskwarrior_command(command):
         """Execute a TaskWarrior command and return its output."""
         try:
+            command_args = shlex.split(command) if isinstance(command, str) else command
             # Start the process
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                command_args,
                 text=True,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -1760,10 +1760,10 @@ try:
                 manual_sort_dependencies("")
 
     def get_latest_task_id():
-        export_command = "task +LATEST export"
+        export_command = ["task", "+LATEST", "export"]
         try:
             proc = subprocess.run(
-                export_command, shell=True, text=True, capture_output=True
+                export_command, text=True, capture_output=True
             )
             if proc.stdout:
                 tasks = json.loads(proc.stdout)
@@ -1777,7 +1777,8 @@ try:
 
     def execute_task_command(command):
         try:
-            proc = subprocess.run(command, shell=True, text=True, capture_output=True)
+            command_args = shlex.split(command) if isinstance(command, str) else command
+            proc = subprocess.run(command_args, text=True, capture_output=True)
             if proc.stdout:
                 print(proc.stdout)
             if proc.stderr:
@@ -2848,8 +2849,14 @@ try:
         """
         try:
             # Use Taskwarrior to get pending tasks for the project
-            command = f"task project:{project} project.not:{project}. status:pending count"
-            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            command = [
+                "task",
+                f"project:{project}",
+                f"project.not:{project}.",
+                "status:pending",
+                "count",
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
             
             # Check if the command executed successfully
             if result.returncode != 0:
@@ -3141,7 +3148,8 @@ try:
         )
 
     def display_tasks(command, show_details=False, sort_by="alpha"):
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        command_args = shlex.split(command) if isinstance(command, str) else command
+        result = subprocess.run(command_args, capture_output=True, text=True)
         console = Console()
 
         if not result.stdout:

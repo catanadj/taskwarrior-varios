@@ -3,6 +3,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 from itertools import groupby
+import logging
 import os
 import re
 import subprocess
@@ -21,17 +22,68 @@ try:
 except ImportError:
     import json
 
+logger = logging.getLogger(__name__)
+
 
 def task_organizer(
     handle_task_fn, next_summary_fn, display_overdue_tasks_fn, base_dir=None
 ):
     from datetime import time
 
+    task_id_pattern = re.compile(r"^\d+$")
+    time_pattern = re.compile(r"^\d{2}:\d{2}$")
+    shift_pattern = re.compile(r"^[+-]\d+[a-zA-Z]+$")
+
+    def localize_time(value: datetime) -> datetime:
+        if hasattr(local_tz, "localize"):
+            return local_tz.localize(value)
+        return value.replace(tzinfo=local_tz)
+
+    def parse_export_stdout(stdout: str):
+        try:
+            return json.loads(stdout or "[]")
+        except ValueError:
+            return []
+
+    def run_task_modify(task_id: str, *modifiers: str):
+        result = subprocess.run(
+            ["task", "rc.confirmation=off", task_id, "modify", *modifiers],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Task modify failed for task_id=%s modifiers=%s stderr=%s",
+                task_id,
+                modifiers,
+                result.stderr.strip(),
+            )
+        return result
+
+    def valid_task_id(value: str) -> bool:
+        return bool(task_id_pattern.match(value.strip()))
+
+    def valid_time(value: str) -> bool:
+        if not time_pattern.match(value):
+            return False
+        try:
+            datetime.strptime(value, "%H:%M")
+        except ValueError:
+            return False
+        return True
+
     def get_tasks_for_day(date):
-        command = f"task due:{date} status:pending export"
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        tasks = json.loads(result.stdout)
-        # console.print(tasks)
+        result = subprocess.run(
+            ["task", f"due:{date}", "status:pending", "export"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("Task export failed for due:%s: %s", date, result.stderr.strip())
+            return []
+        tasks = parse_export_stdout(result.stdout)
         return sorted(tasks, key=lambda x: x.get("due", ""))
 
     def parse_duration(duration_str):
@@ -64,6 +116,7 @@ def task_organizer(
         def __init__(self):
             self.console = Console()
             self.current_date = (datetime.now() + timedelta(days=1)).date()
+            self.all_pending_tasks = []
             self.refresh_tasks()
             script_directory = base_dir or os.path.dirname(os.path.abspath(__file__))
             self.notes_file = os.path.join(script_directory, "daily_notes.jsonl")
@@ -118,11 +171,8 @@ def task_organizer(
             return new_index
 
         def create_compact_view(self):
-            local_tz = pytz.timezone(
-                "Asia/Aden"
-            )  # Replace with your local timezone
             start_of_day = datetime.combine(self.current_date, datetime.min.time())
-            start_of_day = local_tz.localize(start_of_day)
+            start_of_day = localize_time(start_of_day)
             end_of_day = start_of_day.replace(hour=23, minute=59, second=59)
             project_counts = self.get_pending_counts("projects")
             tag_counts = self.get_pending_counts("tags")
@@ -310,18 +360,20 @@ def task_organizer(
             self.console.print(Panel(table, title=title, expand=False))
 
         def process_command(self, choice):
-            if choice.lower() == "n":
+            choice = choice.strip().lower()
+
+            if choice == "n":
                 self.note_options()
-            elif choice.lower() == "mv":
+            elif choice == "mv":
                 task_ids = self.console.input(
                     "[yellow]Enter task ID(s) separated by commas: "
                 ).split(",")
                 new_time = self.console.input("[yellow]Enter new time (HH:MM): ")
                 for task_id in task_ids:
                     self.move_task(task_id.strip(), new_time)
-            elif choice.lower() == "v":
+            elif choice == "v":
                 pass  #
-            elif choice.lower() == "d":
+            elif choice == "d":
                 task_ids = self.console.input(
                     "[yellow]Enter task ID(s) separated by commas: "
                 ).split(",")
@@ -330,45 +382,50 @@ def task_organizer(
                 )
                 for task_id in task_ids:
                     self.change_duration(task_id.strip(), new_duration)
-            elif choice.lower() == "r":
+            elif choice == "r":
                 self.refresh_tasks()
-            elif choice.lower() == "s":
+            elif choice == "s":
                 shift_input = self.console.input(
                     "[yellow]Enter task ID(s) and shift duration (e.g., '321,322 +15min' or '321,322 -1h'): "
                 )
-                task_ids, shift_duration = shift_input.split(maxsplit=1)
+                try:
+                    task_ids, shift_duration = shift_input.split(maxsplit=1)
+                except ValueError:
+                    self.console.print(
+                        "Invalid input format. Use '321,322 +15min'.", style="bold red"
+                    )
+                    return
                 for task_id in task_ids.split(","):
                     self.shift_task(f"{task_id.strip()} {shift_duration}")
-            elif choice.lower() == "cd":
+            elif choice == "cd":
                 date = self.console.input(
                     "[yellow]Enter date (YYYY-MM-DD) or 'today' or 'tomorrow': "
                 )
                 self.select_day(date)
-            elif choice.lower() == "ad":
+            elif choice == "ad":
                 self.add_task()
-            elif choice.lower() == "tw":
+            elif choice == "tw":
                 handle_task_fn()
-            elif choice.lower() == "b":
+            elif choice == "b":
                 self.current_date -= timedelta(days=1)
                 self.refresh_tasks()
-            elif choice.lower() == "f":
+            elif choice == "f":
                 self.current_date += timedelta(days=1)
                 self.refresh_tasks()
-            elif choice.lower() == "an":
+            elif choice == "an":
                 self.add_note_option()
-            elif choice.lower() == "rn":
+            elif choice == "rn":
                 self.remove_note_option()
-            elif choice.lower() == "en":
+            elif choice == "en":
                 self.edit_note_option()
-            elif choice.lower() == "as":
+            elif choice == "as":
                 self.arrange_tasks()
-            elif choice.lower() == "":
+            elif choice == "":
                 exit()
             else:
                 self.console.print(f"Unknown command: {choice}", style="bold red")
 
         def arrange_tasks(self):
-            # local_tz = pytz.timezone('Asia/Aden')  # Replace with your local timezone
             sort_by = self.console.input(
                 "[yellow]Sort tasks by (D)uration or (V)alue: "
             ).lower()
@@ -388,6 +445,9 @@ def task_organizer(
                 tasks_to_arrange = [
                     task for task in self.tasks if str(task["id"]) in task_id_list
                 ]
+            if not tasks_to_arrange:
+                self.console.print("No tasks selected.", style="bold red")
+                return
 
             start_time = self.console.input("[yellow]Enter start time (HH:MM): ")
             try:
@@ -401,7 +461,7 @@ def task_organizer(
 
             # Combine date and time, and then localize to the specified timezone
             current_time = datetime.combine(self.current_date, start_time_dt)
-            current_time = local_tz.localize(current_time)
+            current_time = localize_time(current_time)
 
             if sort_by == "d":
                 sorted_tasks = sorted(
@@ -421,14 +481,25 @@ def task_organizer(
                 due_time = current_time.astimezone(pytz.utc).strftime(
                     "%Y%m%dT%H%M%SZ"
                 )  # Convert to UTC for taskwarrior
-                subprocess.run(
-                    f"echo n | task {task['id']} modify due:{due_time}", shell=True
-                )
+                run_task_modify(str(task["id"]), f"due:{due_time}")
                 self.console.print(
                     f"Task {task['id']} arranged at {current_time.strftime('%H:%M %Z')}",
                     style="bold green",
                 )
                 current_time += timedelta(minutes=task_duration)
+
+        def note_options(self):
+            option = self.console.input(
+                "[yellow]Choose note action (AN add, RN remove, EN edit): "
+            ).strip().lower()
+            if option == "an":
+                self.add_note_option()
+            elif option == "rn":
+                self.remove_note_option()
+            elif option == "en":
+                self.edit_note_option()
+            else:
+                self.console.print("Unknown note option.", style="bold red")
 
         def add_note_option(self):
             time = self.console.input(
@@ -491,32 +562,46 @@ def task_organizer(
             )
 
         def move_task(self, task_id, new_time):
-            subprocess.run(
-                f"task {task_id.strip()} modify due:{self.current_date}T{new_time}",
-                shell=True,
-            )
+            task_id = task_id.strip()
+            if not valid_task_id(task_id):
+                self.console.print(f"Invalid task id: {task_id}", style="bold red")
+                return
+            if not valid_time(new_time):
+                self.console.print("Invalid time format (HH:MM).", style="bold red")
+                return
+            run_task_modify(task_id, f"due:{self.current_date}T{new_time}")
             self.console.print(
-                f"Task {task_id.strip()} moved to {new_time}", style="bold green"
+                f"Task {task_id} moved to {new_time}", style="bold green"
             )
 
         def change_duration(self, task_id, new_duration):
-            subprocess.run(
-                f"task {task_id.strip()} modify duration:{new_duration}", shell=True
-            )
+            task_id = task_id.strip()
+            if not valid_task_id(task_id):
+                self.console.print(f"Invalid task id: {task_id}", style="bold red")
+                return
+            run_task_modify(task_id, f"duration:{new_duration}")
             self.console.print(
-                f"Duration for task {task_id.strip()} set to {new_duration}",
+                f"Duration for task {task_id} set to {new_duration}",
                 style="bold green",
             )
 
         def shift_task(self, shift_input):
             try:
                 task_id, shift_duration = shift_input.split(maxsplit=1)
-                subprocess.run(
-                    f"task {task_id.strip()} modify due:due{shift_duration}",
-                    shell=True,
-                )
+                task_id = task_id.strip()
+                shift_duration = shift_duration.strip()
+                if not valid_task_id(task_id):
+                    self.console.print(f"Invalid task id: {task_id}", style="bold red")
+                    return
+                if not shift_pattern.match(shift_duration):
+                    self.console.print(
+                        "Invalid shift duration. Use values like +15min or -1h.",
+                        style="bold red",
+                    )
+                    return
+                run_task_modify(task_id, f"due:due{shift_duration}")
                 self.console.print(
-                    f"Task {task_id.strip()} shifted by {shift_duration}",
+                    f"Task {task_id} shifted by {shift_duration}",
                     style="bold green",
                 )
             except ValueError:
@@ -550,19 +635,26 @@ def task_organizer(
                 next_summary_fn()
                 task_id = self.console.input("[yellow]Enter task ID: ")
                 due_time = self.console.input("[yellow]Enter due time (HH:MM): ")
-                command = f"task {task_id} modify due:{self.current_date}T{due_time} status:pending"
             elif option.lower() == "o":
                 display_overdue_tasks_fn()
                 task_id = self.console.input("[yellow]Enter task ID: ")
                 due_time = self.console.input("[yellow]Enter due time (HH:MM): ")
-                command = f"task {task_id} modify due:{self.current_date}T{due_time} status:pending"
             else:
                 self.console.print(
                     "Invalid option. Task not added.", style="bold red"
                 )
                 return
 
-            subprocess.run(command, shell=True)
+            task_id = task_id.strip()
+            due_time = due_time.strip()
+            if not valid_task_id(task_id):
+                self.console.print(f"Invalid task id: {task_id}", style="bold red")
+                return
+            if not valid_time(due_time):
+                self.console.print("Invalid time format (HH:MM).", style="bold red")
+                return
+
+            run_task_modify(task_id, f"due:{self.current_date}T{due_time}", "status:pending")
             self.console.print(
                 f"Task {task_id} added for {due_time}", style="bold green"
             )
@@ -570,6 +662,16 @@ def task_organizer(
 
         def refresh_tasks(self):
             self.tasks = get_tasks_for_day(self.current_date)
+            result = subprocess.run(
+                ["task", "status:pending", "export"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                self.all_pending_tasks = parse_export_stdout(result.stdout)
+            else:
+                self.all_pending_tasks = []
 
         def create_task_panel(
             self,
@@ -676,11 +778,8 @@ def task_organizer(
             return output, new_end_time
 
         def create_calendar_view(self):
-            local_tz = pytz.timezone(
-                "Europe/London"
-            )  # Replace with your local timezone
             start_of_day = datetime.combine(self.current_date, datetime.min.time())
-            start_of_day = local_tz.localize(start_of_day)
+            start_of_day = localize_time(start_of_day)
             end_of_day = start_of_day.replace(hour=23, minute=59, second=59)
             current_time = start_of_day
             project_counts = self.get_pending_counts("projects")
@@ -689,7 +788,6 @@ def task_organizer(
                 self.tasks,
                 key=lambda x: datetime.strptime(x["due"], "%Y%m%dT%H%M%SZ"),
             )
-            print(sorted_tasks)
             output = []
             all_items = []
 
@@ -701,7 +799,6 @@ def task_organizer(
                 all_items.append(("task", due_time, task, task_end_time))
 
             all_items.sort(key=lambda x: x[1])
-            print(all_items)
             next_item = None
 
             while current_time < end_of_day:
@@ -892,13 +989,7 @@ def task_organizer(
                 )
                 if not unique_tags:
                     return counts
-                result = subprocess.run(
-                    ["task", "status:pending", "export"],
-                    capture_output=True,
-                    text=True,
-                )
-                pending_tasks = json.loads(result.stdout or "[]")
-                for task in pending_tasks:
+                for task in self.all_pending_tasks:
                     for tag in task.get("tags", []):
                         if tag in unique_tags:
                             counts[tag] += 1
@@ -910,13 +1001,7 @@ def task_organizer(
                 )
                 if not unique_projects:
                     return counts
-                result = subprocess.run(
-                    ["task", "status:pending", "export"],
-                    capture_output=True,
-                    text=True,
-                )
-                pending_tasks = json.loads(result.stdout or "[]")
-                for task in pending_tasks:
+                for task in self.all_pending_tasks:
                     project_name = task.get("project")
                     if project_name in unique_projects:
                         counts[project_name] += 1
